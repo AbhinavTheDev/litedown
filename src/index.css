@@ -1,0 +1,570 @@
+/* ===== StreamdownLite Styles ===== */
+
+/* Prism Theme - One Dark Inspired */
+/* Scoped to sd-content to work with rendered code blocks */
+.sd-content code[class*="language-"],
+.sd-content pre[class*="language-"],
+.sd-code-block code[class*="language-"],
+.sd-code-block pre[class*="language-"] {
+  color: #abb2bf;
+  text-shadow: none;
+  font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', Consolas, Monaco, 'Andale Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  hyphens: none;
+  word-wrap: normal;
+  word-break: normal;
+  white-space: pre;
+}
+
+.sd-content .token.comment,
+.sd-content .token.prolog,
+.sd-content .token.doctype,
+.sd-content .token.cdata,
+.sd-code-block .token.comment,
+.sd-code-block .token.prolog,
+.sd-code-block .token.doctype,
+.sd-code-block .token.cdata {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.sd-content .token.punctuation,
+.sd-code-block .token.punctuation {
+  color: #abb2bf;
+}
+
+.sd-content .token.namespace,
+.sd-code-block .token.namespace {
+  opacity: 0.7;
+}
+
+.sd-content .token.property,
+.sd-content .token.tag,
+.sd-content .token.boolean,
+.sd-content .token.number,
+.sd-content .token.constant,
+.sd-content .token.symbol,
+.sd-content .token.deleted,
+.sd-code-block .token.property,
+.sd-code-block .token.tag,
+.sd-code-block .token.boolean,
+.sd-code-block .token.number,
+.sd-code-block .token.constant,
+.sd-code-block .token.symbol,
+.sd-code-block .token.deleted {
+  color: #d19a66;
+}
+
+.sd-content .token.selector,
+.sd-content .token.attr-name,
+.sd-content .token.string,
+.sd-content .token.char,
+.sd-content .token.builtin,
+.sd-content .token.inserted,
+.sd-code-block .token.selector,
+.sd-code-block .token.attr-name,
+.sd-code-block .token.string,
+.sd-code-block .token.char,
+.sd-code-block .token.builtin,
+.sd-code-block .token.inserted {
+  color: #98c379;
+}
+
+.sd-content .token.operator,
+.sd-content .token.entity,
+.sd-content .token.url,
+.sd-code-block .token.operator,
+.sd-code-block .token.entity,
+.sd-code-block .token.url {
+  color: #56b6c2;
+}
+
+.sd-content .token.atrule,
+.sd-content .token.attr-value,
+.sd-content .token.keyword,
+.sd-code-block .token.atrule,
+.sd-code-block .token.attr-value,
+.sd-code-block .token.keyword {
+  color: #c678dd;
+}
+
+.sd-content .token.function,
+.sd-content .token.class-name,
+.sd-code-block .token.function,
+.sd-code-block .token.class-name {
+  color: #61afef;
+}
+
+.sd-content .token.regex,
+.sd-content .token.important,
+.sd-content .token.variable,
+.sd-code-block .token.regex,
+.sd-code-block .token.important,
+.sd-code-block .token.variable {
+  color: #c678dd;
+}
+
+.sd-content .token.important,
+.sd-content .token.bold,
+.sd-code-block .token.important,
+.sd-code-block .token.bold {
+  font-weight: bold;
+}
+
+.sd-content .token.italic,
+.sd-code-block .token.italic {
+  font-style: italic;
+}
+
+/* ===== Rendered Content Styles ===== */
+
+.sd-content {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #1e293b;
+  line-height: 1.75;
+  font-size: 15px;
+}
+
+.sd-content > *:first-child {
+  margin-top: 0 !important;
+}
+
+/* Headings */
+.sd-h1 {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid #e2e8f0;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.sd-h2 {
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.sd-h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.sd-h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: #334155;
+}
+
+.sd-h5 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #475569;
+}
+
+.sd-h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Paragraphs */
+.sd-p {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.8;
+}
+
+/* Links */
+.sd-link {
+  color: #4f46e5;
+  text-decoration: underline;
+  text-decoration-color: #c7d2fe;
+  text-underline-offset: 2px;
+  transition: all 0.15s ease;
+}
+
+.sd-link:hover {
+  color: #4338ca;
+  text-decoration-color: #4f46e5;
+}
+
+/* Images */
+.sd-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 1rem 0;
+  border: 1px solid #e2e8f0;
+}
+
+/* Inline code */
+.sd-inline-code {
+  font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.85em;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  padding: 0.15em 0.4em;
+  color: #be185d;
+  font-weight: 500;
+}
+
+/* Code blocks */
+.sd-code-block {
+  position: relative;
+  margin: 1.25rem 0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+}
+
+.sd-code-lang {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a6adc8;
+  background: #313244;
+  border-bottom-left-radius: 0.5rem;
+  user-select: none;
+}
+
+.sd-pre {
+  margin: 0;
+  padding: 1.25rem;
+  overflow-x: auto;
+  line-height: 1.7;
+}
+
+.sd-pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sd-pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sd-pre::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 3px;
+}
+
+/* Blockquotes */
+.sd-blockquote {
+  margin: 1.25rem 0;
+  padding: 0.75rem 1.25rem;
+  border-left: 4px solid #c7d2fe;
+  background: #f8fafc;
+  border-radius: 0 0.5rem 0.5rem 0;
+  color: #475569;
+}
+
+.sd-blockquote .sd-p {
+  margin: 0.25rem 0;
+}
+
+/* Callouts */
+.sd-callout {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid;
+}
+
+.sd-callout-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.sd-callout-body .sd-p {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.sd-callout-note {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.sd-callout-tip {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.sd-callout-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.sd-callout-caution {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.sd-callout-important {
+  background: #faf5ff;
+  border-color: #e9d5ff;
+  color: #6b21a8;
+}
+
+/* Lists */
+.sd-list {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.sd-ul {
+  list-style-type: disc;
+}
+
+.sd-ol {
+  list-style-type: decimal;
+}
+
+.sd-li {
+  margin: 0.25rem 0;
+  padding-left: 0.25rem;
+  line-height: 1.7;
+}
+
+.sd-task-item {
+  list-style-type: none;
+  margin-left: -1.5rem;
+  padding-left: 0;
+}
+
+.sd-checkbox {
+  margin-right: 0.5rem;
+  font-size: 1.1em;
+}
+
+/* Tables */
+.sd-table-wrapper {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+}
+
+.sd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.sd-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sd-table td {
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.sd-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sd-table tr:hover td {
+  background: #f8fafc;
+}
+
+/* Horizontal rule */
+.sd-hr {
+  margin: 2rem 0;
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #cbd5e1 20%, #cbd5e1 80%, transparent);
+}
+
+/* Math Display */
+.sd-math-display {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  overflow-x: auto;
+  text-align: center;
+  background: #fafbff;
+  border-radius: 0.75rem;
+  border: 1px solid #e8ecf4;
+}
+
+.sd-math-display math {
+  font-size: 1.2em;
+}
+
+/* MathML Element Styling */
+.sd-math-display mtable {
+  margin: 0 auto;
+}
+
+.sd-math-display mtd {
+  padding: 0.15em 0.3em;
+}
+
+.sd-math-display mfrac {
+  margin: 0 0.1em;
+}
+
+.sd-math-display mrow {
+  display: inline;
+}
+
+/* Subscript and Superscript styling */
+.sd-math-display msub,
+.sd-math-display msup,
+.sd-math-display msubsup {
+  padding: 0 0.05em;
+}
+
+/* Matrix bracket styling */
+.sd-math-display mo[stretchy="true"] {
+  padding: 0 0.1em;
+}
+
+/* Inline math */
+math:not([display="block"]) {
+  font-size: 1.05em;
+  vertical-align: middle;
+}
+
+/* Math error fallback */
+.math-error {
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 0.1em 0.4em;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+
+/* Mermaid diagrams */
+.sd-mermaid {
+  margin: 1.25rem 0;
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-svg {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Mark/Highlight */
+mark {
+  background: linear-gradient(120deg, #fef08a 0%, #fde047 100%);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.2em;
+}
+
+/* Streaming cursor */
+.sd-cursor {
+  display: inline-block;
+  color: #6366f1;
+  animation: blink 1s steps(1) infinite;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Strikethrough */
+del {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
+
+/* Superscript */
+sup {
+  font-size: 0.75em;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+  top: -0.5em;
+}
+
+/* Strong */
+strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* Emphasis */
+em {
+  font-style: italic;
+}
+
+/* Scrollbar for tables */
+.sd-table-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sd-table-wrapper::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.sd-table-wrapper::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+/* Smooth transitions for interactive elements */
+.sd-content a,
+.sd-content button {
+  transition: all 0.15s ease;
+}
+
+/* Print styles */
+@media print {
+  .sd-code-block {
+    border: 1px solid #ccc;
+  }
+  .sd-cursor {
+    display: none;
+  }
+}
