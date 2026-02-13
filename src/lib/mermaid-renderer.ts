@@ -504,7 +504,7 @@ function renderFlowchartSVG(code: string, options: RenderOptions = {}): string {
           rx="${node.height / 2}" ry="${node.height / 2}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
         break;
       case 'hexagon':
-        const hx = node.width / 2;
+        // const hx = node.width / 2;
         const hy = node.height / 2;
         svg += `<polygon id="${nodeId}" points="${cx},${node.y} ${node.x + node.width},${cy - hy/2} ${node.x + node.width},${cy + hy/2} ${cx},${node.y + node.height} ${node.x},${cy + hy/2} ${node.x},${cy - hy/2}"
           fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
