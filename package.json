@@ -21,7 +21,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:lib": "tsc && vite build",
+    "build:lib": "tsc -b && vite build --mode lib",
     "lint": "eslint .",
     "preview": "vite preview",
     "prepublishOnly": "npm run build:lib"

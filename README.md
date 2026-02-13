@@ -25,7 +25,7 @@ const html = render(markdownText);
 
 ```bash
 # Build the library
-npm run build
+npm run build:lib
 
 # Check dist folder contains:
 # - index.js (ESM)
