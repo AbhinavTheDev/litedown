@@ -1,4 +1,4 @@
-# StreamdownLite
+# LiteDown
 
 A lightweight, streaming-first Markdown renderer.
 

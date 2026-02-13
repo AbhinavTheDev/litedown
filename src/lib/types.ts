@@ -1,4 +1,8 @@
-// StreamdownLite Types
+/**
+ * Litedown Type Definitions
+ */
+
+// ──── Options ────
 
 export interface StreamdownOptions {
   /** Enable math rendering via MathML (default: true) */
@@ -21,14 +25,13 @@ export interface StreamdownOptions {
   cursor?: string;
   /** Enable GFM features like task lists, strikethrough (default: true) */
   gfm?: boolean;
+  /** Enable HTML sanitization (default: true) */
+  sanitize?: boolean;
+  /** Plugins to register */
+  plugins?: import('./plugins/plugin-api').LitedownPlugin[];
 }
 
-export interface StreamdownState {
-  buffer: string;
-  html: string;
-  isStreaming: boolean;
-  tokens: Token[];
-}
+// ──── Tokens ────
 
 export type TokenType =
   | 'paragraph'
@@ -41,20 +44,56 @@ export type TokenType =
   | 'table'
   | 'math_block'
   | 'html'
-  | 'newline';
+  | 'newline'
+  | 'callout'
+  | 'custom';
 
-export interface Token {
+export interface BlockToken {
   type: TokenType;
   raw: string;
   text?: string;
-  depth?: number; // for headings
-  lang?: string; // for code blocks
-  items?: Token[]; // for lists
-  ordered?: boolean; // for lists
-  rows?: string[][]; // for tables
-  header?: string[]; // for tables
-  align?: string[]; // for tables
+  depth?: number;
+  lang?: string;
+  items?: ListItemToken[];
+  ordered?: boolean;
+  rows?: string[][];
+  header?: string[];
+  align?: string[];
+  /** Whether this token represents a fully-parsed block (for streaming) */
+  isComplete?: boolean;
+  /** Byte offset where this token ends in source */
+  endOffset?: number;
+  /** Callout/admonition type */
+  calloutType?: string;
+  /** Callout title */
+  calloutTitle?: string;
+  /** Inner body (for blockquotes/callouts) */
+  body?: string;
 }
+
+export interface ListItemToken {
+  indent: number;
+  content: string;
+  checked?: boolean;
+}
+
+// ──── Inline Rules ────
+
+export interface InlineRule {
+  pattern: RegExp;
+  render: (match: RegExpMatchArray) => string;
+}
+
+// ──── State ────
+
+export interface StreamdownState {
+  buffer: string;
+  html: string;
+  isStreaming: boolean;
+  tokens: BlockToken[];
+}
+
+// ──── Mermaid ────
 
 export interface MermaidNode {
   id: string;

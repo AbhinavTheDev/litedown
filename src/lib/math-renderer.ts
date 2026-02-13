@@ -103,9 +103,7 @@ const DOUBLE_STRUCK: Record<string, string> = {
 
 // ParseResult removed - unused
 
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+import { escapeHtml } from './utils/escape';
 
 function parseGroup(latex: string, pos: number): { content: string; end: number } {
   if (pos >= latex.length) return { content: '', end: pos };
@@ -465,7 +463,7 @@ function tokensToMathML(tokens: MathToken[]): string {
           }
 
           if (envName === 'matrix' || envName === 'pmatrix' || envName === 'bmatrix' ||
-              envName === 'vmatrix' || envName === 'Bmatrix' || envName === 'Vmatrix') {
+            envName === 'vmatrix' || envName === 'Bmatrix' || envName === 'Vmatrix') {
             result += renderMatrix(envTokens, envName);
           } else if (envName === 'cases') {
             result += renderCases(envTokens);
@@ -705,7 +703,7 @@ function renderMatrix(tokens: MathToken[], envName: string): string {
   }
 
   // Add column and row spacing for better readability
-  const table = `(<mtable columnspacing="0.5em" rowspacing="0.2em">${tableContent}</mtable>)`;
+  const table = `[<mtable columnspacing="0.5em" rowspacing="0.2em">${tableContent}</mtable>]`;
 
   // Add delimiters based on environment
   switch (envName) {

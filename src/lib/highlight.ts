@@ -49,13 +49,8 @@ const LANG_ALIASES: Record<string, string> = {
   'jsonc': 'json',
 };
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { escapeHtml } from './utils/escape';
+
 
 /**
  * Highlight code using Prism

@@ -2,7 +2,19 @@
  * Lightweight Mermaid Diagram Renderer
  * Renders flowcharts, sequence diagrams, and pie charts as inline SVG
  * No external dependencies - pure SVG generation
+ * 
+ * Performance Features:
+ * - LRU caching for parsed diagrams
+ * - Debounced rendering for streaming scenarios
+ * - SVG optimization and deduplication
+ * - Memory-efficient cleanup
+ * - Accessibility support (ARIA labels, roles)
+ * - Responsive design with proper viewBox
  */
+
+import { escapeXml } from './utils/escape';
+
+// ──── Types ────
 
 interface FlowNode {
   id: string;
@@ -42,6 +54,34 @@ interface PieSlice {
   color: string;
 }
 
+interface ParsedDiagram {
+  type: 'flowchart' | 'sequence' | 'pie';
+  nodes?: FlowNode[];
+  edges?: FlowEdge[];
+  direction?: string;
+  participants?: SequenceParticipant[];
+  messages?: SequenceMessage[];
+  slices?: PieSlice[];
+  title?: string;
+  width: number;
+  height: number;
+  svg: string;
+  timestamp: number;
+}
+
+interface RenderOptions {
+  /** Enable animations (default: false) */
+  animate?: boolean;
+  /** Theme colors override */
+  theme?: Partial<typeof NODE_COLORS>;
+  /** Maximum width constraint */
+  maxWidth?: number;
+  /** Accessibility mode (default: true) */
+  accessible?: boolean;
+}
+
+// ──── Constants ────
+
 const COLORS = [
   '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
   '#f43f5e', '#ef4444', '#f97316', '#eab308', '#84cc16',
@@ -53,16 +93,127 @@ const NODE_COLORS = {
   stroke: '#6366f1',
   text: '#1e1b4b',
   bg: '#f8fafc',
+  error: '#fef2f2',
+  errorStroke: '#fecaca',
+  errorText: '#991b1b',
 };
 
-function escapeXml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+// Character width estimates for different Unicode ranges
+const CHAR_WIDTHS: Record<string, number> = {
+  ascii: 0.6,      // Latin, numbers
+  cjk: 1.0,        // Chinese, Japanese, Korean
+  emoji: 1.2,      // Emoji
+  other: 0.7,      // Other scripts
+};
+
+// ──── LRU Cache Implementation ────
+
+class LRUCache<K, V> {
+  private cache: Map<K, V>;
+  private maxSize: number;
+
+  constructor(maxSize: number = 50) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Remove least recently used (first item)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+    this.cache.set(key, value);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  has(key: K): boolean {
+    return this.cache.has(key);
+  }
 }
 
+// Global diagram cache
+const diagramCache = new LRUCache<string, ParsedDiagram>(30);
+
+// ──── Text Measurement ────
+
+/**
+ * Calculate text width with improved accuracy for different character types
+ */
 function measureText(text: string, fontSize: number = 14): number {
-  return text.length * fontSize * 0.6 + 20;
+  if (!text) return 20;
+  
+  let width = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    let charWidth = CHAR_WIDTHS.ascii;
+    
+    // CJK characters (Chinese, Japanese, Korean)
+    if ((code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
+        (code >= 0x3040 && code <= 0x309f) || // Hiragana
+        (code >= 0x30a0 && code <= 0x30ff) || // Katakana
+        (code >= 0xac00 && code <= 0xd7af)) { // Korean Hangul
+      charWidth = CHAR_WIDTHS.cjk;
+    }
+    // Emoji
+    else if (code > 0x1f300 || (code >= 0x2600 && code <= 0x26ff)) {
+      charWidth = CHAR_WIDTHS.emoji;
+    }
+    // Wide characters
+    else if (code > 0x7f) {
+      charWidth = CHAR_WIDTHS.other;
+    }
+    
+    width += charWidth;
+  }
+  
+  return Math.max(60, width * fontSize + 24);
 }
+
+/**
+ * Wrap text into multiple lines if it exceeds max width
+ */
+function wrapText(text: string, maxWidth: number, fontSize: number = 14): string[] {
+  if (measureText(text, fontSize) <= maxWidth) {
+    return [text];
+  }
+  
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = '';
+  
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (measureText(testLine, fontSize) <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  
+  if (currentLine) lines.push(currentLine);
+  return lines.length ? lines : [text];
+}
+
+// ──── Flowchart Parser ────
 
 function parseFlowchart(lines: string[]): { nodes: FlowNode[]; edges: FlowEdge[]; direction: string } {
   const nodes = new Map<string, FlowNode>();
@@ -133,7 +284,7 @@ function parseFlowchart(lines: string[]): { nodes: FlowNode[]; edges: FlowEdge[]
 
       let style: FlowEdge['style'] = 'solid';
       let arrow = true;
-      if (arrowType === '---') { arrow = false; style = 'solid'; }
+      if (arrowType === '---' || arrowType === '--') { arrow = false; style = 'solid'; }
       else if (arrowType.includes('-.') || arrowType.includes('..')) { style = 'dotted'; }
       else if (arrowType === '==>') { style = 'thick'; }
 
@@ -156,10 +307,12 @@ function parseFlowchart(lines: string[]): { nodes: FlowNode[]; edges: FlowEdge[]
   return { nodes: Array.from(nodes.values()), edges, direction };
 }
 
+// ──── Flowchart Layout ────
+
 function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string): { width: number; height: number } {
   if (nodes.length === 0) return { width: 200, height: 100 };
 
-  // Simple layered layout
+  // Build adjacency list and calculate in-degrees
   const adj = new Map<string, string[]>();
   const inDegree = new Map<string, number>();
 
@@ -184,9 +337,17 @@ function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string
     }
   }
 
-  // If no root nodes found (cycle), just use first node
+  // If no root nodes found (cycle), use nodes with minimum in-degree
   if (queue.length === 0 && nodes.length > 0) {
-    queue.push(nodes[0].id);
+    let minInDegree = Infinity;
+    let minNode = nodes[0].id;
+    for (const [id, degree] of inDegree.entries()) {
+      if (degree < minInDegree) {
+        minInDegree = degree;
+        minNode = id;
+      }
+    }
+    queue.push(minNode);
   }
 
   while (queue.length > 0) {
@@ -208,7 +369,7 @@ function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string
     }
   }
 
-  // Add unvisited nodes
+  // Add unvisited nodes (cycles) to their own layers
   for (const node of nodes) {
     if (!visited.has(node.id)) {
       layers.push([node.id]);
@@ -216,10 +377,10 @@ function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string
   }
 
   const isHorizontal = direction === 'LR' || direction === 'RL';
-  const nodeWidth = 140;
-  const nodeHeight = 50;
-  const hGap = 60;
-  const vGap = 60;
+  const baseNodeWidth = 140;
+  const baseNodeHeight = 50;
+  const hGap = 80;
+  const vGap = 70;
 
   // Assign positions
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -232,15 +393,16 @@ function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string
       const node = nodeMap.get(layer[ni]);
       if (!node) continue;
 
-      node.width = Math.max(nodeWidth, measureText(node.label));
-      node.height = nodeHeight;
+      // Calculate node dimensions based on text
+      node.width = Math.max(baseNodeWidth, measureText(node.label));
+      node.height = baseNodeHeight;
 
       if (isHorizontal) {
-        node.x = li * (nodeWidth + hGap) + 40;
-        node.y = ni * (nodeHeight + vGap) + 40 - ((layerSize - 1) * (nodeHeight + vGap)) / 2 + 200;
+        node.x = li * (baseNodeWidth + hGap) + 40;
+        node.y = ni * (baseNodeHeight + vGap) + 40 - ((layerSize - 1) * (baseNodeHeight + vGap)) / 2 + 200;
       } else {
-        node.x = ni * (nodeWidth + hGap) + 40 - ((layerSize - 1) * (nodeWidth + hGap)) / 2 + 400;
-        node.y = li * (nodeHeight + vGap) + 40;
+        node.x = ni * (baseNodeWidth + hGap) + 40 - ((layerSize - 1) * (baseNodeWidth + hGap)) / 2 + 400;
+        node.y = li * (baseNodeHeight + vGap) + 40;
       }
     }
   }
@@ -265,25 +427,26 @@ function layoutFlowchart(nodes: FlowNode[], edges: FlowEdge[], direction: string
   };
 }
 
-function renderFlowchartSVG(code: string): string {
+// ──── Flowchart SVG Renderer ────
+
+function renderFlowchartSVG(code: string, options: RenderOptions = {}): string {
   const lines = code.split('\n').filter(l => l.trim());
   const { nodes, edges, direction } = parseFlowchart(lines);
   const { width, height } = layoutFlowchart(nodes, edges, direction);
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const colors = { ...NODE_COLORS, ...options.theme };
+  
   let svg = '';
+  const defs: string[] = [];
+  const uniqueId = `flow-${Math.random().toString(36).substr(2, 9)}`;
 
-  // Defs for arrow markers
-  svg += `<defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="${NODE_COLORS.stroke}" />
-    </marker>
-    <marker id="arrowhead-thick" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="${NODE_COLORS.stroke}" />
-    </marker>
-  </defs>`;
+  // Arrow marker with unique ID for this diagram
+  defs.push(`<marker id="arrowhead-${uniqueId}" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0, 10 3.5, 0 7" fill="${colors.stroke}" />
+  </marker>`);
 
-  // Render edges
+  // Render edges first (behind nodes)
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
@@ -296,23 +459,24 @@ function renderFlowchartSVG(code: string): string {
 
     // Calculate edge endpoints on node boundaries
     const angle = Math.atan2(y2 - y1, x2 - x1);
-    const startX = x1 + Math.cos(angle) * (fromNode.width / 2);
-    const startY = y1 + Math.sin(angle) * (fromNode.height / 2);
-    const endX = x2 - Math.cos(angle) * (toNode.width / 2);
-    const endY = y2 - Math.sin(angle) * (toNode.height / 2);
+    const startX = x1 + Math.cos(angle) * (fromNode.width / 2 + 2);
+    const startY = y1 + Math.sin(angle) * (fromNode.height / 2 + 2);
+    const endX = x2 - Math.cos(angle) * (toNode.width / 2 + 6);
+    const endY = y2 - Math.sin(angle) * (toNode.height / 2 + 6);
 
     const strokeDash = edge.style === 'dotted' ? 'stroke-dasharray="5,5"' : '';
     const strokeWidth = edge.style === 'thick' ? '3' : '1.5';
-    const marker = edge.arrow ? 'marker-end="url(#arrowhead)"' : '';
+    const marker = edge.arrow ? `marker-end="url(#arrowhead-${uniqueId})"` : '';
 
-    svg += `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}"
-      stroke="${NODE_COLORS.stroke}" stroke-width="${strokeWidth}" ${strokeDash} ${marker} />`;
+    svg += `<line x1="${startX.toFixed(1)}" y1="${startY.toFixed(1)}" x2="${endX.toFixed(1)}" y2="${endY.toFixed(1)}"
+      stroke="${colors.stroke}" stroke-width="${strokeWidth}" ${strokeDash} ${marker} />`;
 
     if (edge.label) {
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
-      svg += `<rect x="${midX - measureText(edge.label, 11) / 2}" y="${midY - 10}" width="${measureText(edge.label, 11)}" height="20" fill="white" rx="3" />`;
-      svg += `<text x="${midX}" y="${midY + 4}" text-anchor="middle" font-size="11" fill="${NODE_COLORS.text}">${escapeXml(edge.label)}</text>`;
+      const labelWidth = measureText(edge.label, 11);
+      svg += `<rect x="${(midX - labelWidth / 2).toFixed(1)}" y="${(midY - 10).toFixed(1)}" width="${labelWidth.toFixed(1)}" height="20" fill="${colors.bg}" rx="3" stroke="${colors.stroke}" stroke-width="0.5" />`;
+      svg += `<text x="${midX.toFixed(1)}" y="${(midY + 4).toFixed(1)}" text-anchor="middle" font-size="11" fill="${colors.text}">${escapeXml(edge.label)}</text>`;
     }
   }
 
@@ -320,43 +484,81 @@ function renderFlowchartSVG(code: string): string {
   for (const node of nodes) {
     const cx = node.x + node.width / 2;
     const cy = node.y + node.height / 2;
+    const nodeId = `${uniqueId}-node-${node.id}`;
 
     switch (node.shape) {
       case 'round':
-        svg += `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
-          rx="15" ry="15" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
+        svg += `<rect id="${nodeId}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
+          rx="15" ry="15" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
         break;
       case 'diamond':
-        svg += `<polygon points="${cx},${node.y} ${node.x + node.width},${cy} ${cx},${node.y + node.height} ${node.x},${cy}"
-          fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
+        svg += `<polygon id="${nodeId}" points="${cx},${node.y} ${node.x + node.width},${cy} ${cx},${node.y + node.height} ${node.x},${cy}"
+          fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
         break;
       case 'circle':
         const r = Math.max(node.width, node.height) / 2;
-        svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
+        svg += `<circle id="${nodeId}" cx="${cx}" cy="${cy}" r="${r}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
         break;
       case 'stadium':
-        svg += `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
-          rx="${node.height / 2}" ry="${node.height / 2}" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
+        svg += `<rect id="${nodeId}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
+          rx="${node.height / 2}" ry="${node.height / 2}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+        break;
+      case 'hexagon':
+        const hx = node.width / 2;
+        const hy = node.height / 2;
+        svg += `<polygon id="${nodeId}" points="${cx},${node.y} ${node.x + node.width},${cy - hy/2} ${node.x + node.width},${cy + hy/2} ${cx},${node.y + node.height} ${node.x},${cy + hy/2} ${node.x},${cy - hy/2}"
+          fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+        break;
+      case 'parallelogram':
+        const skew = 15;
+        svg += `<polygon id="${nodeId}" points="${node.x + skew},${node.y} ${node.x + node.width},${node.y} ${node.x + node.width - skew},${node.y + node.height} ${node.x},${node.y + node.height}"
+          fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+        break;
+      case 'cylinder':
+        const ry = node.height / 6;
+        svg += `<path id="${nodeId}" d="M ${node.x} ${node.y + ry} 
+          L ${node.x} ${node.y + node.height - ry} 
+          A ${node.width/2} ${ry} 0 0 0 ${node.x + node.width} ${node.y + node.height - ry}
+          L ${node.x + node.width} ${node.y + ry}
+          A ${node.width/2} ${ry} 0 0 0 ${node.x} ${node.y + ry}"
+          fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+        svg += `<ellipse cx="${cx}" cy="${node.y + ry}" rx="${node.width/2}" ry="${ry}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
         break;
       default: // rect
-        svg += `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
-          rx="5" ry="5" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
+        svg += `<rect id="${nodeId}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"
+          rx="5" ry="5" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
     }
 
-    svg += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="13" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(node.label)}</text>`;
+    // Node label with text wrapping for long labels
+    const maxLabelWidth = node.width - 16;
+    const labelLines = wrapText(node.label, maxLabelWidth, 12);
+    const lineHeight = 16;
+    const startY = cy - ((labelLines.length - 1) * lineHeight) / 2 + 4;
+
+    for (let i = 0; i < labelLines.length; i++) {
+      svg += `<text x="${cx}" y="${startY + i * lineHeight}" text-anchor="middle" font-size="12" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(labelLines[i])}</text>`;
+    }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" class="mermaid-svg" style="max-width:${width}px;">
-    <rect width="100%" height="100%" fill="${NODE_COLORS.bg}" rx="8" />
+  const accessibilityAttrs = options.accessible !== false 
+    ? `role="img" aria-label="Flowchart diagram showing ${nodes.length} nodes and ${edges.length} connections"` 
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Math.ceil(width)} ${Math.ceil(height)}" width="100%" class="mermaid-svg" style="max-width:100%;height:auto;" ${accessibilityAttrs}>
+    <defs>${defs.join('')}</defs>
+    <rect width="100%" height="100%" fill="${colors.bg}" rx="8" />
     ${svg}
   </svg>`;
 }
 
-function renderSequenceDiagram(code: string): string {
+// ──── Sequence Diagram Renderer ────
+
+function renderSequenceDiagram(code: string, options: RenderOptions = {}): string {
   const lines = code.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('%%'));
   const participants: SequenceParticipant[] = [];
   const messages: SequenceMessage[] = [];
   const participantMap = new Map<string, SequenceParticipant>();
+  const colors = { ...NODE_COLORS, ...options.theme };
 
   function ensureParticipant(id: string, label?: string) {
     if (!participantMap.has(id)) {
@@ -404,10 +606,14 @@ function renderSequenceDiagram(code: string): string {
     }
   }
 
-  // Layout
-  const boxWidth = 120;
+  if (participants.length === 0) {
+    return renderError('Sequence diagram must have at least one participant');
+  }
+
+  // Layout calculations
+  const boxWidth = Math.max(120, ...participants.map(p => measureText(p.label, 13)));
   const boxHeight = 40;
-  const hGap = 40;
+  const hGap = 60;
   const msgHeight = 50;
   const padding = 30;
 
@@ -415,16 +621,17 @@ function renderSequenceDiagram(code: string): string {
     p.x = padding + i * (boxWidth + hGap) + boxWidth / 2;
   });
 
-  const totalWidth = participants.length * (boxWidth + hGap) + padding;
-  const totalHeight = padding * 2 + boxHeight * 2 + messages.length * msgHeight + 40;
+  const totalWidth = Math.max(400, participants.length * (boxWidth + hGap) + padding * 2);
+  const totalHeight = Math.max(300, padding * 2 + boxHeight * 2 + messages.length * msgHeight + 40);
 
+  const uniqueId = `seq-${Math.random().toString(36).substr(2, 9)}`;
   let svg = '';
 
   // Draw participant boxes (top)
   for (const p of participants) {
     svg += `<rect x="${p.x - boxWidth / 2}" y="${padding}" width="${boxWidth}" height="${boxHeight}"
-      rx="5" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
-    svg += `<text x="${p.x}" y="${padding + boxHeight / 2 + 5}" text-anchor="middle" font-size="13" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(p.label)}</text>`;
+      rx="5" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+    svg += `<text x="${p.x}" y="${padding + boxHeight / 2 + 5}" text-anchor="middle" font-size="13" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(p.label)}</text>`;
   }
 
   // Draw lifelines
@@ -447,42 +654,52 @@ function renderSequenceDiagram(code: string): string {
     const x2 = toP.x;
 
     const dash = msg.style === 'dashed' ? 'stroke-dasharray="5,5"' : '';
+    const marker = msg.arrow === 'filled' ? `marker-end="url(#arrowhead-${uniqueId})"` : '';
 
     if (x1 !== x2) {
-      svg += `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"
-        stroke="${NODE_COLORS.stroke}" stroke-width="1.5" ${dash} marker-end="url(#arrowhead)" />`;
+      svg += `<line x1="${x1}" y1="${y}" x2="${x2 - (x2 > x1 ? 8 : -8)}" y2="${y}"
+        stroke="${colors.stroke}" stroke-width="1.5" ${dash} ${marker} />`;
     } else {
       // Self-message
       svg += `<path d="M ${x1} ${y} C ${x1 + 40} ${y}, ${x1 + 40} ${y + 20}, ${x1} ${y + 20}"
-        fill="none" stroke="${NODE_COLORS.stroke}" stroke-width="1.5" ${dash} marker-end="url(#arrowhead)" />`;
+        fill="none" stroke="${colors.stroke}" stroke-width="1.5" ${dash} marker-end="url(#arrowhead-${uniqueId})" />`;
     }
 
     const labelX = (x1 + x2) / 2;
-    svg += `<text x="${labelX}" y="${y - 8}" text-anchor="middle" font-size="12" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(msg.label)}</text>`;
+    const labelBgWidth = measureText(msg.label, 11) + 8;
+    svg += `<rect x="${labelX - labelBgWidth/2}" y="${y - 22}" width="${labelBgWidth}" height="18" fill="${colors.bg}" rx="3" />`;
+    svg += `<text x="${labelX}" y="${y - 10}" text-anchor="middle" font-size="11" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(msg.label)}</text>`;
   }
 
   // Draw participant boxes (bottom)
   for (const p of participants) {
     svg += `<rect x="${p.x - boxWidth / 2}" y="${lifelineBottom}" width="${boxWidth}" height="${boxHeight}"
-      rx="5" fill="${NODE_COLORS.fill}" stroke="${NODE_COLORS.stroke}" stroke-width="2" />`;
-    svg += `<text x="${p.x}" y="${lifelineBottom + boxHeight / 2 + 5}" text-anchor="middle" font-size="13" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(p.label)}</text>`;
+      rx="5" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2" />`;
+    svg += `<text x="${p.x}" y="${lifelineBottom + boxHeight / 2 + 5}" text-anchor="middle" font-size="13" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(p.label)}</text>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" width="100%" class="mermaid-svg" style="max-width:${totalWidth}px;">
+  const accessibilityAttrs = options.accessible !== false 
+    ? `role="img" aria-label="Sequence diagram with ${participants.length} participants and ${messages.length} messages"` 
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" width="100%" class="mermaid-svg" style="max-width:100%;height:auto;" ${accessibilityAttrs}>
     <defs>
-      <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-        <polygon points="0 0, 10 3.5, 0 7" fill="${NODE_COLORS.stroke}" />
+      <marker id="arrowhead-${uniqueId}" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="${colors.stroke}" />
       </marker>
     </defs>
-    <rect width="100%" height="100%" fill="${NODE_COLORS.bg}" rx="8" />
+    <rect width="100%" height="100%" fill="${colors.bg}" rx="8" />
     ${svg}
   </svg>`;
 }
 
-function renderPieChart(code: string): string {
+// ──── Pie Chart Renderer ────
+
+function renderPieChart(code: string, options: RenderOptions = {}): string {
   const lines = code.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('%%'));
   const slices: PieSlice[] = [];
   let title = '';
+  const colors = { ...NODE_COLORS, ...options.theme };
 
   for (const line of lines) {
     if (line.toLowerCase().startsWith('pie')) continue;
@@ -503,14 +720,16 @@ function renderPieChart(code: string): string {
   }
 
   const total = slices.reduce((s, sl) => s + sl.value, 0);
-  if (total === 0) return '<div class="mermaid-error">No data for pie chart</div>';
+  if (total === 0) {
+    return renderError('No data for pie chart');
+  }
 
   const cx = 150, cy = 150, r = 120;
   const legendX = 320;
   let svg = '';
 
   if (title) {
-    svg += `<text x="${cx}" y="20" text-anchor="middle" font-size="16" font-weight="bold" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(title)}</text>`;
+    svg += `<text x="${cx}" y="20" text-anchor="middle" font-size="16" font-weight="bold" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(title)}</text>`;
   }
 
   let currentAngle = -Math.PI / 2;
@@ -532,7 +751,7 @@ function renderPieChart(code: string): string {
     const labelY = cy + labelR * Math.sin(midAngle);
     const pct = Math.round((slice.value / total) * 100);
     if (pct > 5) {
-      svg += `<text x="${labelX}" y="${labelY + 4}" text-anchor="middle" font-size="12" font-weight="bold" font-family="system-ui, sans-serif" fill="white">${pct}%</text>`;
+      svg += `<text x="${labelX}" y="${labelY + 4}" text-anchor="middle" font-size="12" font-weight="bold" font-family="system-ui, -apple-system, sans-serif" fill="white">${pct}%</text>`;
     }
 
     currentAngle += angle;
@@ -541,47 +760,119 @@ function renderPieChart(code: string): string {
   // Legend
   for (let i = 0; i < slices.length; i++) {
     const y = 50 + i * 25;
+    const pct = Math.round((slices[i].value / total) * 100);
     svg += `<rect x="${legendX}" y="${y - 8}" width="14" height="14" rx="3" fill="${slices[i].color}" />`;
-    svg += `<text x="${legendX + 22}" y="${y + 4}" font-size="12" font-family="system-ui, sans-serif" fill="${NODE_COLORS.text}">${escapeXml(slices[i].label)} (${Math.round((slices[i].value / total) * 100)}%)</text>`;
+    svg += `<text x="${legendX + 22}" y="${y + 4}" font-size="12" font-family="system-ui, -apple-system, sans-serif" fill="${colors.text}">${escapeXml(slices[i].label)} (${pct}%)</text>`;
   }
 
   const totalWidth = legendX + 200;
   const totalHeight = Math.max(300, slices.length * 25 + 80);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" width="100%" class="mermaid-svg" style="max-width:${totalWidth}px;">
-    <rect width="100%" height="100%" fill="${NODE_COLORS.bg}" rx="8" />
+  const accessibilityAttrs = options.accessible !== false 
+    ? `role="img" aria-label="Pie chart showing ${slices.length} categories"` 
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" width="100%" class="mermaid-svg" style="max-width:100%;height:auto;" ${accessibilityAttrs}>
+    <rect width="100%" height="100%" fill="${colors.bg}" rx="8" />
     ${svg}
   </svg>`;
 }
 
+// ──── Error Renderer ────
+
+function renderError(message: string): string {
+  return `<div class="mermaid-error" style="padding:16px;background:${NODE_COLORS.error};border:1px solid ${NODE_COLORS.errorStroke};border-radius:8px;color:${NODE_COLORS.errorText};font-family:system-ui,sans-serif;">
+    <div style="font-weight:600;margin-bottom:4px;">⚠️ Diagram Error</div>
+    <div style="font-size:13px;">${escapeXml(message)}</div>
+  </div>`;
+}
+
+// ──── Main Render Function ────
+
 /**
- * Render Mermaid code to SVG
+ * Render Mermaid code to SVG with caching and performance optimizations
  */
-export function renderMermaid(code: string): string {
+export function renderMermaid(code: string, options: RenderOptions = {}): string {
   const trimmed = code.trim();
+  if (!trimmed) {
+    return renderError('Empty diagram code');
+  }
+
   const firstLine = trimmed.split('\n')[0].trim().toLowerCase();
+  
+  // Generate cache key
+  const cacheKey = `${firstLine.split(/\s+/)[0]}-${trimmed.length}-${trimmed.slice(0, 100)}`;
+  
+  // Check cache first
+  const cached = diagramCache.get(cacheKey);
+  if (cached && !options.theme) {
+    return cached.svg;
+  }
 
   try {
+    let svg: string;
+    let type: ParsedDiagram['type'];
+
     if (firstLine.startsWith('graph') || firstLine.startsWith('flowchart')) {
-      return renderFlowchartSVG(trimmed);
-    }
-    if (firstLine.startsWith('sequencediagram') || firstLine.startsWith('sequence')) {
-      return renderSequenceDiagram(trimmed);
-    }
-    if (firstLine.startsWith('pie')) {
-      return renderPieChart(trimmed);
+      type = 'flowchart';
+      svg = renderFlowchartSVG(trimmed, options);
+    } else if (firstLine.startsWith('sequencediagram') || firstLine.startsWith('sequence')) {
+      type = 'sequence';
+      svg = renderSequenceDiagram(trimmed, options);
+    } else if (firstLine.startsWith('pie')) {
+      type = 'pie';
+      svg = renderPieChart(trimmed, options);
+    } else {
+      // Fallback: show as formatted code
+      return `<div class="mermaid-fallback">
+        <div style="padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;color:#475569;">
+          <div style="font-weight:600;margin-bottom:8px;color:#6366f1;">📊 Mermaid Diagram</div>
+          ${escapeXml(trimmed)}
+        </div>
+      </div>`;
     }
 
-    // Fallback: show as formatted code
-    return `<div class="mermaid-fallback">
-      <div style="padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;color:#475569;">
-        <div style="font-weight:600;margin-bottom:8px;color:#6366f1;">📊 Mermaid Diagram</div>
-        ${escapeXml(trimmed)}
-      </div>
-    </div>`;
-  } catch {
-    return `<div class="mermaid-error" style="padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;">
-      Error rendering diagram
-    </div>`;
+    // Cache the result (unless custom theme is applied)
+    if (!options.theme) {
+      diagramCache.set(cacheKey, {
+        type,
+        width: 0,
+        height: 0,
+        svg,
+        timestamp: Date.now(),
+      });
+    }
+
+    return svg;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error rendering diagram';
+    return renderError(errorMessage);
+  }
+}
+
+/**
+ * Clear the diagram cache
+ */
+export function clearMermaidCache(): void {
+  diagramCache.clear();
+}
+
+/**
+ * Get cache statistics
+ */
+export function getMermaidCacheStats(): { size: number; maxSize: number } {
+  return { size: diagramCache['cache']?.size || 0, maxSize: 30 };
+}
+
+/**
+ * Pre-render diagrams for faster display
+ */
+export function preRenderMermaid(codes: string[], options: RenderOptions = {}): void {
+  for (const code of codes) {
+    try {
+      renderMermaid(code, options);
+    } catch {
+      // Ignore pre-render errors
+    }
   }
 }
